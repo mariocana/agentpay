@@ -13,7 +13,8 @@
     "typecheck": "tsc -p .",
     "web": "npx serve web",
     "deploy:erc8183": "tsx scripts/deploy-erc8183.ts",
-    "estimate:deploy": "tsx scripts/estimate-deploy.ts"
+    "estimate:deploy": "tsx scripts/estimate-deploy.ts",
+    "snapshot": "tsx scripts/snapshot.ts"
   },
   "keywords": [],
   "author": "",

@@ -55,6 +55,7 @@
     <input class="addr" name="provider" placeholder="Filter by provider address (worker)" />
     <input name="agent" placeholder="ERC-8004 agent id" style="width:150px" />
     <input name="worker" placeholder="Worker URL (deliverables)" style="width:230px" />
+    <input name="rpc" placeholder="Custom Arc RPC (optional)" style="width:200px" />
     <button type="submit">Apply</button>
   </form>
 
@@ -107,7 +108,8 @@ const acpAbi = parseAbi([
 const repAbi = parseAbi(["function getSummary(uint256 agentId, address[] clientAddresses, string tag1, string tag2) view returns (uint64 count, int128 summaryValue, uint8 summaryValueDecimals)", "function getClients(uint256 agentId) view returns (address[])"]);
 const idAbi = parseAbi(["function tokenURI(uint256) view returns (string)", "function ownerOf(uint256) view returns (address)"]);
 
-const client = createPublicClient({ chain, transport: http(undefined, { retryCount: 3, retryDelay: 1000 }), batch: { multicall: true } });
+const RPC = q.get("rpc") || undefined;
+const client = createPublicClient({ chain, transport: http(RPC, { retryCount: 2, retryDelay: 1000, timeout: 8000 }), batch: { multicall: true } });
 const $ = (id) => document.getElementById(id);
 const short = (a) => a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "";
 const addrLink = (a) => `<a class="mono" href="${explorer}/address/${a}" target="_blank">${short(a)}</a>`;
@@ -117,8 +119,9 @@ $("netlabel").textContent = `· Arc ${network} (chain ${chain.id})`;
 $("contract").innerHTML = CONTRACT ? `<a href="${explorer}/address/${CONTRACT}" target="_blank">${CONTRACT}</a>` : "set ?contract=0x…";
 const form = $("filters");
 const DEFAULTS = { provider: network === "mainnet" ? "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB" : "", agent: network === "mainnet" ? "207" : "", worker: "" };
-for (const k of ["provider", "agent", "worker"]) form.elements[k].value = q.get(k) ?? DEFAULTS[k];
-form.onsubmit = (e) => { e.preventDefault(); const p = new URLSearchParams(q); for (const k of ["provider","agent","worker"]) { const v = form.elements[k].value.trim(); v ? p.set(k, v) : p.delete(k); } location.search = p.toString(); };
+const FIELDS = ["provider", "agent", "worker", "rpc"];
+for (const k of FIELDS) form.elements[k].value = q.get(k) ?? DEFAULTS[k] ?? "";
+form.onsubmit = (e) => { e.preventDefault(); const p = new URLSearchParams(q); for (const k of FIELDS) { const v = form.elements[k].value.trim(); v ? p.set(k, v) : p.delete(k); } location.search = p.toString(); };
 
 const provider = (q.get("provider") ?? DEFAULTS.provider).toLowerCase() || null;
 const workerUrl = (q.get("worker") ?? DEFAULTS.worker).replace(/\/$/, "");
@@ -203,26 +206,69 @@ async function loadReputation() {
   } catch (e) { $("rep").textContent = "–"; $("repsub").textContent = e.message; }
 }
 
+let liveOk = false;
+
+function applySnapshot(snap) {
+  for (const j of snap.jobs) {
+    const id = j.id;
+    jobs.set(id, {
+      job: { id: BigInt(id), client: j.client, provider: j.provider, description: j.description, budget: BigInt(j.budget), status: STATUS.indexOf(j.status) },
+      hash: snap.deliverableHashes[id] ?? null,
+      deliverable: null,
+    });
+  }
+  if (snap.agent) {
+    $("rep").textContent = snap.agent.average == null ? "–" : `${Number(snap.agent.average).toFixed(1)} / 100`;
+    $("repsub").innerHTML = `${snap.agent.reviews} review(s) · agent #${snap.agent.id}${snap.agent.name ? " · " + escape(snap.agent.name) : ""} · <a href="${explorer}/token/${IDENTITY}/instance/${snap.agent.id}" target="_blank">ERC-8004</a>`;
+  }
+}
+
+function setStatus(snap) {
+  const when = snap ? new Date(snap.capturedAt).toLocaleString() : null;
+  $("status").innerHTML = liveOk
+    ? `Live · ${jobs.size} job(s) on this contract`
+    : `Snapshot of ${when ?? "unknown date"} · <span class="err">the public Arc RPC is not responding</span> <button id="retry">Retry live</button>`;
+  const r = $("retry");
+  if (r) r.onclick = () => location.reload();
+}
+
 async function main() {
   if (!CONTRACT) return;
-  const latest = await client.getBlockNumber();
-  $("status").textContent = "Loading jobs…";
 
-  const total = await withRetry(() => client.readContract({ address: CONTRACT, abi: acpAbi, functionName: "jobCounter" }));
-  const MAX_ROWS = 50n;
-  const first = total > MAX_ROWS ? total - MAX_ROWS + 1n : 1n;
-  const idList = [];
-  for (let i = first; i <= total; i++) idList.push(i);
-
-  const jobsRead = await Promise.all(
-    idList.map((id) => withRetry(() => client.readContract({ address: CONTRACT, abi: acpAbi, functionName: "getJob", args: [id] }))),
-  );
-  for (let i = 0; i < idList.length; i++) jobs.set(idList[i].toString(), { job: jobsRead[i], deliverable: null, hash: null });
-  render();
-  $("status").textContent = `${idList.length} job(s) of ${total} · loading deliverables…`;
-
-  const fromBlock = latest > LOOKBACK ? latest - LOOKBACK : 0n;
+  let snap = null;
   try {
+    const r = await fetch("./data.json");
+    if (r.ok) {
+      snap = await r.json();
+      applySnapshot(snap);
+      render();
+      $("status").textContent = "Loading live data…";
+      await Promise.all([...jobs.values()].filter((e) => e.hash).map((e) => loadDeliverable(e)));
+      render();
+    }
+  } catch {}
+
+  setTimeout(() => { if (!liveOk) setStatus(snap); }, 12000);
+
+  try {
+    const latest = await withRetry(() => client.getBlockNumber());
+    const total = await withRetry(() => client.readContract({ address: CONTRACT, abi: acpAbi, functionName: "jobCounter" }));
+    const MAX_ROWS = 50n;
+    const first = total > MAX_ROWS ? total - MAX_ROWS + 1n : 1n;
+    const idList = [];
+    for (let i = first; i <= total; i++) idList.push(i);
+    const jobsRead = await Promise.all(
+      idList.map((id) => withRetry(() => client.readContract({ address: CONTRACT, abi: acpAbi, functionName: "getJob", args: [id] }))),
+    );
+    for (let i = 0; i < idList.length; i++) {
+      const key = idList[i].toString();
+      const prev = jobs.get(key) ?? { deliverable: null, hash: null };
+      jobs.set(key, { ...prev, job: jobsRead[i] });
+    }
+    liveOk = true;
+    render();
+
+    const fromBlock = latest > LOOKBACK ? latest - LOOKBACK : 0n;
     const submitted = [];
     for (let b = fromBlock; b <= latest; b += CHUNK) {
       const toBlock = b + CHUNK - 1n < latest ? b + CHUNK - 1n : latest;
@@ -234,23 +280,22 @@ async function main() {
       pushFeed(l, l.blockNumber, l.transactionHash);
     }
     await Promise.all([...jobs.values()].filter((e) => e.hash).map((e) => loadDeliverable(e)));
-  } catch (e) {
-    $("status").innerHTML = `Jobs loaded · deliverables unavailable: <span class="err">${escape(e.message.split("\n")[0])}</span>`;
-  }
-  render();
-  if (!$("status").innerHTML.includes("err")) $("status").textContent = `Live · ${idList.length} job(s) on this contract`;
-  loadReputation();
+    render();
+    loadReputation();
 
-  client.watchContractEvent({ address: CONTRACT, abi: acpAbi, fromBlock: latest + 1n, poll: true, pollingInterval: 15000, onLogs: async (ls) => {
-    for (const l of ls) { pushFeed(l, l.blockNumber, l.transactionHash); await refreshJob(l.args.jobId, l.eventName === "JobSubmitted" ? l.args.deliverable : undefined); }
-    if (ls.some(l => l.eventName === "JobCompleted" || l.eventName === "JobRejected")) loadReputation();
-  }, onError: () => {} });
+    client.watchContractEvent({ address: CONTRACT, abi: acpAbi, fromBlock: latest + 1n, poll: true, pollingInterval: 15000, onLogs: async (ls) => {
+      for (const l of ls) { pushFeed(l, l.blockNumber, l.transactionHash); await refreshJob(l.args.jobId, l.eventName === "JobSubmitted" ? l.args.deliverable : undefined); }
+      if (ls.some(l => l.eventName === "JobCompleted" || l.eventName === "JobRejected")) loadReputation();
+    }, onError: () => {} });
+  } catch {}
+
+  setStatus(snap);
+  if (!snap && !liveOk) $("status").innerHTML = `<span class="err">Could not reach the Arc RPC and no snapshot is available.</span> <button id="retry">Retry</button>`;
+  const r = $("retry");
+  if (r) r.onclick = () => location.reload();
 }
 
-main().catch(() => {
-  $("status").innerHTML = `<span class="err">The public Arc RPC is rate-limiting this page.</span> <button id="retry">Retry</button>`;
-  $("retry").onclick = () => location.reload();
-});
+main();
 </script>
 </body>
 </html>

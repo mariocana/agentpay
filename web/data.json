@@ -1,0 +1,116 @@
+{
+  "capturedAt": "2026-09-24T20:41:24.449Z",
+  "network": "mainnet",
+  "chainId": 5042,
+  "contract": "0x14fb0049c9999dd60d0d6fe5522c82e0ae81814e",
+  "jobCounter": "11",
+  "jobs": [
+    {
+      "id": "1",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "In 2 frasi: cosa rende Arc adatto ai pagamenti tra agenti AI?",
+      "budget": "13050",
+      "status": "Completed"
+    },
+    {
+      "id": "2",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "Estrai come JSON i campi chain, finality e gasToken da questo testo, solo il JSON: 'Arc e' una L1 EVM con finalita' sotto il secondo che usa USDC come token del gas.'",
+      "budget": "18300",
+      "status": "Completed"
+    },
+    {
+      "id": "3",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "Riscrivi in una frase, tono formale: 'gli agenti si pagano da soli senza che nessuno guardi'.",
+      "budget": "14650",
+      "status": "Completed"
+    },
+    {
+      "id": "4",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "In 2 sentences: what makes Arc suitable for payments between AI agents?",
+      "budget": "13550",
+      "status": "Completed"
+    },
+    {
+      "id": "5",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "Extract as JSON the fields chain, finality and gasToken from this text, JSON only: 'Arc is an EVM L1 with sub-second finality that uses USDC as its gas token.'",
+      "budget": "17950",
+      "status": "Rejected"
+    },
+    {
+      "id": "6",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "Extract as JSON the fields chain, finality and gasToken from this text, JSON only: 'Arc is an EVM L1 with sub-second finality that uses USDC as its gas token.'",
+      "budget": "17950",
+      "status": "Completed"
+    },
+    {
+      "id": "7",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "Rewrite in one sentence, formal tone: 'the agents just pay each other without anyone watching'.",
+      "budget": "14750",
+      "status": "Completed"
+    },
+    {
+      "id": "8",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "Classify this support message as bug, billing or feature request. One word only: 'I was charged twice for the same invoice last month.'",
+      "budget": "16750",
+      "status": "Completed"
+    },
+    {
+      "id": "9",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "Summarize in one sentence: 'Arc is a Layer-1 blockchain where USDC pays for gas, transactions settle in under a second, and the EVM is fully supported.'",
+      "budget": "17600",
+      "status": "Completed"
+    },
+    {
+      "id": "10",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "Translate to Spanish, translation only: 'Payment is released when the evaluator accepts the work.'",
+      "budget": "14900",
+      "status": "Completed"
+    },
+    {
+      "id": "11",
+      "client": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+      "provider": "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB",
+      "description": "List 3 risks of letting AI agents pay each other autonomously. Bullets, max 12 words each.",
+      "budget": "14500",
+      "status": "Completed"
+    }
+  ],
+  "deliverableHashes": {
+    "1": "0x99534163459d67e1963433aaee1858c1a5a38032d9d0a78240f0ee0bdc9cb8c9",
+    "2": "0x742955a8a6b2d20819dce042274d923e650393a0c63a160a0b39bdff1cf7f233",
+    "3": "0x56c4b8ab229051f7b7af74a8aa733c5a4bb874e92ce0b75414a98a75084a792d",
+    "4": "0x54f7054ce2bcd978d7484e8e1ef8041c5c2bf2e5375453ed7637f0f68de7afde",
+    "5": "0xfb7f66210513c6d114b9d34b8cb8e6fe891d9cf635ca934b8f24b26163c967aa",
+    "6": "0x0150abfd4089db00e12b081590ebf56798ee2b1cfcd62b0acc3817c399372fb7",
+    "7": "0x682ff0e96b96fec6057e7372bcfdffc465e36b47d579d230ef3dc28dfa773b3b",
+    "8": "0xdb6ac3f06625ab9954095f1cc09ded1963594d827f4784cef35c02364d6ba7f6",
+    "9": "0xab69c10fd8ea8896cb725536d11cba835c40debb14f66f67c6d770d0f19c8329",
+    "10": "0x345a2b8ee8e19c6fdbd3c6edca7a50066746750d82049e3c8996f17fa0e89666",
+    "11": "0x4def429beac16c8685ff60a790d468d1f4c685b4b2c68ed1d336358f3a54f50a"
+  },
+  "agent": {
+    "id": "207",
+    "name": "AgentPay Worker",
+    "reviews": 10,
+    "average": 90
+  }
+}
