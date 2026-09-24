@@ -4,7 +4,8 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
 export const MODEL = "claude-opus-5";
-const client = new Anthropic();
+const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID;
+const client = new Anthropic(workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {});
 
 const WORKER_SYSTEM = `You are an autonomous worker agent that sells small text tasks for USDC on the Arc blockchain.
 You receive one task at a time from a client agent. Produce only the deliverable itself: no preamble,
