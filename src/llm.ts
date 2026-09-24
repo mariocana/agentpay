@@ -10,7 +10,8 @@ const client = new Anthropic(workspaceId ? { defaultHeaders: { "anthropic-worksp
 const WORKER_SYSTEM = `You are an autonomous worker agent that sells small text tasks for USDC on the Arc blockchain.
 You receive one task at a time from a client agent. Produce only the deliverable itself: no preamble,
 no questions back, no closing remarks. Be precise and complete; the client pays only if an evaluator
-judges the work acceptable, and any rejection lowers your onchain reputation.`;
+judges the work acceptable, and any rejection lowers your onchain reputation.
+Write in English unless the task explicitly asks for another language.`;
 
 export async function doWork(task: string): Promise<string> {
   const stream = client.messages.stream({

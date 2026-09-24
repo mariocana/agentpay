@@ -88,11 +88,12 @@ const CONTRACT = q.get("contract") ?? (network === "testnet" ? "0x0747EEf0706327
 const IDENTITY = network === "testnet" ? "0x8004A818BFB912233c491871b3d84c89A494BD9e" : "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
 const REPUTATION = network === "testnet" ? "0x8004B663056A597Dffe9eCcC1965A193B7388713" : "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63";
 // ~0.5s blocks; 24h ≈ 170k blocks. RPC caps eth_getLogs at <10k blocks per call, so we scan in chunks.
-const LOOKBACK = BigInt(q.get("lookback") ?? 60000);
+const LOOKBACK = BigInt(q.get("lookback") ?? 20000);
 const CHUNK = 5000n;
 const STATUS = ["Open", "Funded", "Submitted", "Completed", "Rejected", "Expired"];
 
 const acpAbi = parseAbi([
+  "function jobCounter() view returns (uint256)",
   "function getJob(uint256) view returns ((uint256 id,address client,address provider,address evaluator,string description,uint256 budget,uint256 expiredAt,uint8 status,address hook))",
   "event JobCreated(uint256 indexed jobId, address indexed client, address indexed provider, address evaluator, uint256 expiredAt, address hook)",
   "event BudgetSet(uint256 indexed jobId, uint256 amount)",
@@ -106,7 +107,7 @@ const acpAbi = parseAbi([
 const repAbi = parseAbi(["function getSummary(uint256 agentId, address[] clientAddresses, string tag1, string tag2) view returns (uint64 count, int128 summaryValue, uint8 summaryValueDecimals)", "function getClients(uint256 agentId) view returns (address[])"]);
 const idAbi = parseAbi(["function tokenURI(uint256) view returns (string)", "function ownerOf(uint256) view returns (address)"]);
 
-const client = createPublicClient({ chain, transport: http() });
+const client = createPublicClient({ chain, transport: http(undefined, { retryCount: 3, retryDelay: 1000 }), batch: { multicall: true } });
 const $ = (id) => document.getElementById(id);
 const short = (a) => a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "";
 const addrLink = (a) => `<a class="mono" href="${explorer}/address/${a}" target="_blank">${short(a)}</a>`;
@@ -131,26 +132,29 @@ function pushFeed(ev, blockNumber, hash) {
   $("feed").innerHTML = feed.slice(0, 40).join("");
 }
 
-async function refreshJob(id, deliverableHash) {
-  const j = await client.readContract({ address: CONTRACT, abi: acpAbi, functionName: "getJob", args: [id] });
-  const entry = jobs.get(id.toString()) ?? { deliverable: null, hash: null };
-  entry.job = j;
-  if (deliverableHash) entry.hash = deliverableHash;
-  if (entry.hash && !entry.deliverable) {
-    const sources = [`./deliverables/${entry.hash}.json`];
-    if (workerUrl) sources.unshift(`${workerUrl}/deliverables/${entry.hash}`);
-    for (const url of sources) {
-      try {
-        const r = await fetch(url);
-        if (!r.ok) continue;
-        const d = await r.json();
-        entry.deliverable = d;
-        entry.verified = keccak256(toHex(canonical(d))) === entry.hash;
-        break;
-      } catch {}
-    }
+async function loadDeliverable(entry) {
+  if (!entry.hash || entry.deliverable) return;
+  const sources = [`./deliverables/${entry.hash}.json`];
+  if (workerUrl) sources.unshift(`${workerUrl}/deliverables/${entry.hash}`);
+  for (const url of sources) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const d = await r.json();
+      entry.deliverable = d;
+      entry.verified = keccak256(toHex(canonical(d))) === entry.hash;
+      break;
+    } catch {}
   }
-  jobs.set(id.toString(), entry);
+}
+
+async function refreshJob(id, deliverableHash) {
+  const key = id.toString();
+  const entry = jobs.get(key) ?? { deliverable: null, hash: null };
+  entry.job = await withRetry(() => client.readContract({ address: CONTRACT, abi: acpAbi, functionName: "getJob", args: [id] }));
+  if (deliverableHash) entry.hash = deliverableHash;
+  jobs.set(key, entry);
+  await loadDeliverable(entry);
   render();
 }
 
@@ -169,7 +173,7 @@ function render() {
   }).join("") || `<tr><td colspan="6" class="sub">No jobs in the last ${LOOKBACK} blocks${provider ? " for this provider" : ""}.</td></tr>`;
 }
 // Public RPCs rate-limit bursts; back off and retry.
-async function withRetry(fn, tries = 5) {
+async function withRetry(fn, tries = 7) {
   for (let i = 0; ; i++) {
     try { return await fn(); } catch (e) { if (i >= tries - 1 || !/rate limit|429|limit exceeded/i.test(e.message)) throw e; await new Promise(r => setTimeout(r, 800 * 2 ** i)); }
   }
@@ -201,34 +205,47 @@ async function loadReputation() {
 async function main() {
   if (!CONTRACT) return;
   const latest = await client.getBlockNumber();
+  $("status").textContent = "Loading jobs…";
+
+  const total = await withRetry(() => client.readContract({ address: CONTRACT, abi: acpAbi, functionName: "jobCounter" }));
+  const MAX_ROWS = 50n;
+  const first = total > MAX_ROWS ? total - MAX_ROWS + 1n : 1n;
+  const idList = [];
+  for (let i = first; i <= total; i++) idList.push(i);
+
+  const jobsRead = await Promise.all(
+    idList.map((id) => withRetry(() => client.readContract({ address: CONTRACT, abi: acpAbi, functionName: "getJob", args: [id] }))),
+  );
+  for (let i = 0; i < idList.length; i++) jobs.set(idList[i].toString(), { job: jobsRead[i], deliverable: null, hash: null });
+  render();
+  $("status").textContent = `${idList.length} job(s) of ${total} · loading deliverables…`;
+
   const fromBlock = latest > LOOKBACK ? latest - LOOKBACK : 0n;
-  $("status").textContent = `Scanning blocks ${fromBlock}–${latest}…`;
-  const ranges = [];
-  for (let b = fromBlock; b <= latest; b += CHUNK) ranges.push([b, b + CHUNK - 1n < latest ? b + CHUNK - 1n : latest]);
-  const logs = [];
-  const PAR = 2;
-  for (let i = 0; i < ranges.length; i += PAR) {
-    const batch = await Promise.all(ranges.slice(i, i + PAR).map(([a, b]) => withRetry(() => client.getContractEvents({ address: CONTRACT, abi: acpAbi, fromBlock: a, toBlock: b }))));
-    for (const l of batch) logs.push(...l);
-    $("status").textContent = `Scanning… ${Math.min(i + PAR, ranges.length)}/${ranges.length} chunks, ${logs.length} events`;
+  try {
+    const submitted = [];
+    for (let b = fromBlock; b <= latest; b += CHUNK) {
+      const toBlock = b + CHUNK - 1n < latest ? b + CHUNK - 1n : latest;
+      submitted.push(...(await withRetry(() => client.getContractEvents({ address: CONTRACT, abi: acpAbi, eventName: "JobSubmitted", fromBlock: b, toBlock }))));
+    }
+    for (const l of submitted) {
+      const e = jobs.get(l.args.jobId.toString());
+      if (e) e.hash = l.args.deliverable;
+      pushFeed(l, l.blockNumber, l.transactionHash);
+    }
+    await Promise.all([...jobs.values()].filter((e) => e.hash).map((e) => loadDeliverable(e)));
+  } catch (e) {
+    $("status").innerHTML = `Jobs loaded · deliverables unavailable: <span class="err">${escape(e.message.split("\n")[0])}</span>`;
   }
-  logs.sort((a, b) => Number(a.blockNumber - b.blockNumber) || a.logIndex - b.logIndex);
-  const ids = new Map();
-  for (const l of logs) {
-    if (l.eventName === "JobCreated" && provider && l.args.provider.toLowerCase() !== provider) continue;
-    const id = l.args.jobId;
-    if (!ids.has(id.toString())) ids.set(id.toString(), { id, hash: null });
-    if (l.eventName === "JobSubmitted") ids.get(id.toString()).hash = l.args.deliverable;
-    pushFeed(l, l.blockNumber, l.transactionHash);
-  }
-  await Promise.all([...ids.values()].map(({ id, hash }) => refreshJob(id, hash)));
-  $("status").textContent = `Live · ${logs.length} events since block ${fromBlock}`;
+  render();
+  if (!$("status").innerHTML.includes("err")) $("status").textContent = `Live · ${idList.length} job(s) on this contract`;
   loadReputation();
-  client.watchContractEvent({ address: CONTRACT, abi: acpAbi, fromBlock: latest + 1n, poll: true, pollingInterval: 12000, onLogs: async (ls) => {
+
+  client.watchContractEvent({ address: CONTRACT, abi: acpAbi, fromBlock: latest + 1n, poll: true, pollingInterval: 15000, onLogs: async (ls) => {
     for (const l of ls) { pushFeed(l, l.blockNumber, l.transactionHash); await refreshJob(l.args.jobId, l.eventName === "JobSubmitted" ? l.args.deliverable : undefined); }
     if (ls.some(l => l.eventName === "JobCompleted" || l.eventName === "JobRejected")) loadReputation();
-  }, onError: (e) => { $("status").innerHTML = `Live · update failed: <span class="err">${escape(e.message.split("\n")[0])}</span>`; }});
+  }, onError: () => {} });
 }
+
 main().catch(e => { $("status").innerHTML = `<span class="err">${escape(e.message)}</span>`; });
 </script>
 </body>
