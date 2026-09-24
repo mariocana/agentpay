@@ -70,11 +70,22 @@ export async function giveFeedback(
 }
 
 export async function reputationSummary(agentId: bigint) {
+  const clients = await publicClient.readContract({
+    address: REPUTATION_REGISTRY,
+    abi: reputationRegistryAbi,
+    functionName: "getClients",
+    args: [agentId],
+  });
+  if (clients.length === 0) return { count: 0n, averageScore: null, clients: [] as readonly Address[] };
   const [count, value, decimals] = await publicClient.readContract({
     address: REPUTATION_REGISTRY,
     abi: reputationRegistryAbi,
     functionName: "getSummary",
-    args: [agentId, [], "", ""],
+    args: [agentId, clients, "", ""],
   });
-  return { count, averageScore: count === 0n ? null : Number(value) / Number(count) / 10 ** decimals };
+  return {
+    count,
+    averageScore: count === 0n ? null : Number(value) / Number(count) / 10 ** decimals,
+    clients,
+  };
 }
