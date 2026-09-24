@@ -3,10 +3,11 @@ import { createServer } from "node:http";
 import { formatUnits, parseAbiItem, type Address, type Hex } from "viem";
 import { accountFromEnv, publicClient, walletFor } from "../clients.js";
 import { erc8183Address, WORKER_PORT, network, txUrl } from "../config.js";
-import { getJob, setBudget, submit, watchEvents, type Job } from "../acp.js";
+import { getJob, setBudget, submit, watchEvent, type Job } from "../acp.js";
 import { findByJobId, hashDeliverable, loadDeliverable, storeDeliverable, type Deliverable } from "../deliverables.js";
 import { doWork, MODEL } from "../llm.js";
 import { quoteForTask } from "../pricing.js";
+import { withRetry } from "../rpc.js";
 
 const account = accountFromEnv("WORKER_PRIVATE_KEY");
 const wallet = walletFor(account);
@@ -76,11 +77,12 @@ async function catchUp() {
   const event = parseAbiItem(
     "event JobCreated(uint256 indexed jobId, address indexed client, address indexed provider, address evaluator, uint256 expiredAt, address hook)",
   );
-  const logs = [];
+  const chunks = [];
   for (let b = fromBlock; b <= latest; b += CHUNK) {
     const toBlock = b + CHUNK - 1n < latest ? b + CHUNK - 1n : latest;
-    logs.push(...(await publicClient.getLogs({ address: erc8183Address(), event, args: { provider: me }, fromBlock: b, toBlock })));
+    chunks.push(await withRetry(() => publicClient.getLogs({ address: erc8183Address(), event, args: { provider: me }, fromBlock: b, toBlock })));
   }
+  const logs = chunks.flat();
   log(`catch-up: ${logs.length} job(s) assigned to me in the last ${LOOKBACK} blocks`);
   for (const l of logs) if (l.args.jobId !== undefined) await handleJob(l.args.jobId);
   return latest;
@@ -117,15 +119,20 @@ async function main() {
   log(`network=${network} address=${me} agentId=${agentId ?? "(unregistered — run npm run register)"} contract=${erc8183Address()}`);
   serveHttp();
   const latest = await catchUp();
-  watchEvents((logs) => {
-    for (const l of logs) {
-      if (l.eventName === "JobCreated" && (l.args.provider as Address)?.toLowerCase() === me.toLowerCase()) {
-        void handleJob(l.args.jobId as bigint);
-      } else if (l.eventName === "JobFunded") {
-        void handleJob(l.args.jobId as bigint);
+  const onError = (e: Error) => log("watch error:", e.message.split("\n")[0]);
+  watchEvent(
+    "JobCreated",
+    (logs) => {
+      for (const l of logs) {
+        if ((l.args.provider as Address)?.toLowerCase() === me.toLowerCase()) void handleJob(l.args.jobId as bigint);
       }
-    }
-  }, latest + 1n);
+    },
+    latest + 1n,
+    onError,
+  );
+  watchEvent("JobFunded", (logs) => {
+    for (const l of logs) void handleJob(l.args.jobId as bigint);
+  }, latest + 1n, onError);
   log("listening for JobCreated / JobFunded events...");
 }
 
