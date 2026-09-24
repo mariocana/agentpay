@@ -33,7 +33,7 @@ export async function jobCounter(): Promise<bigint> {
 }
 
 async function send(wallet: Wallet, label: string, request: () => Promise<Hex>): Promise<Hex> {
-  const hash = await request();
+  const hash = await withRetry(request);
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error(`${label} reverted: ${txUrl(hash)}`);
   return hash;

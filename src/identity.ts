@@ -4,6 +4,7 @@ import { identityRegistryAbi } from "./abi/identityRegistry.js";
 import { reputationRegistryAbi } from "./abi/reputationRegistry.js";
 import { IDENTITY_REGISTRY, REPUTATION_REGISTRY, txUrl } from "./config.js";
 import { publicClient, type Wallet } from "./clients.js";
+import { withRetry } from "./rpc.js";
 
 export interface AgentRegistration {
   name: string;
@@ -20,12 +21,12 @@ export function registrationDataUri(reg: AgentRegistration): string {
 }
 
 export async function registerAgent(wallet: Wallet, reg: AgentRegistration): Promise<{ agentId: bigint; hash: Hex }> {
-  const hash = await wallet.writeContract({
+  const hash = await withRetry(() => wallet.writeContract({
     address: IDENTITY_REGISTRY,
     abi: identityRegistryAbi,
     functionName: "register",
     args: [registrationDataUri(reg)],
-  });
+  }));
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error(`register reverted: ${txUrl(hash)}`);
   for (const log of receipt.logs) {
@@ -58,12 +59,12 @@ export async function giveFeedback(
   wallet: Wallet,
   params: { agentId: bigint; score: number; tag1: string; tag2: string; evidence: string },
 ): Promise<Hex> {
-  const hash = await wallet.writeContract({
+  const hash = await withRetry(() => wallet.writeContract({
     address: REPUTATION_REGISTRY,
     abi: reputationRegistryAbi,
     functionName: "giveFeedback",
     args: [params.agentId, BigInt(Math.round(params.score)), 0, params.tag1, params.tag2, "", "", keccak256(toHex(params.evidence))],
-  });
+  }));
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error(`giveFeedback reverted: ${txUrl(hash)}`);
   return hash;
