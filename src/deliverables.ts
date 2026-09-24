@@ -1,6 +1,6 @@
 // Content-addressed deliverable store. The keccak256 of the canonical JSON payload is what
 // the provider commits onchain via submit(jobId, deliverable).
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { keccak256, toHex, type Hex } from "viem";
 
 const DIR = new URL("../data/deliverables/", import.meta.url);
@@ -46,4 +46,18 @@ export async function fetchDeliverable(hash: Hex, workerUrl?: string): Promise<D
     }
   }
   return loadDeliverable(hash);
+}
+
+export function findByJobId(jobId: string): Deliverable | null {
+  if (!existsSync(DIR)) return null;
+  for (const f of readdirSync(DIR)) {
+    if (!f.endsWith(".json")) continue;
+    try {
+      const d = JSON.parse(readFileSync(new URL(f, DIR), "utf8")) as Deliverable;
+      if (d.jobId === jobId) return d;
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }

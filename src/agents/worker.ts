@@ -4,7 +4,7 @@ import { formatUnits, parseAbiItem, type Address, type Hex } from "viem";
 import { accountFromEnv, publicClient, walletFor } from "../clients.js";
 import { erc8183Address, WORKER_PORT, network, txUrl } from "../config.js";
 import { getJob, setBudget, submit, watchEvents, type Job } from "../acp.js";
-import { hashDeliverable, loadDeliverable, storeDeliverable, type Deliverable } from "../deliverables.js";
+import { findByJobId, hashDeliverable, loadDeliverable, storeDeliverable, type Deliverable } from "../deliverables.js";
 import { doWork, MODEL } from "../llm.js";
 import { quoteForTask } from "../pricing.js";
 
@@ -45,19 +45,26 @@ async function quote(job: Job) {
 }
 
 async function work(job: Job) {
-  log(`job ${job.id}: funded with ${formatUnits(job.budget, 6)} USDC, working...`);
-  const started = Date.now();
-  const output = await doWork(job.description);
-  const deliverable: Deliverable = {
-    jobId: job.id.toString(),
-    task: job.description,
-    output,
-    model: MODEL,
-    producedAt: new Date().toISOString(),
-    provider: me,
-  };
+  const cached = findByJobId(job.id.toString());
+  let deliverable: Deliverable;
+  if (cached) {
+    log(`job ${job.id}: reusing cached deliverable, skipping the model call`);
+    deliverable = cached;
+  } else {
+    log(`job ${job.id}: funded with ${formatUnits(job.budget, 6)} USDC, working...`);
+    const started = Date.now();
+    const output = await doWork(job.description);
+    deliverable = {
+      jobId: job.id.toString(),
+      task: job.description,
+      output,
+      model: MODEL,
+      producedAt: new Date().toISOString(),
+      provider: me,
+    };
+    log(`job ${job.id}: produced ${output.length} chars in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  }
   const h = storeDeliverable(deliverable);
-  log(`job ${job.id}: produced ${output.length} chars in ${((Date.now() - started) / 1000).toFixed(1)}s, hash ${h}`);
   const tx = await submit(wallet, job.id, h);
   log(`job ${job.id}: submitted ${txUrl(tx)}`);
 }
