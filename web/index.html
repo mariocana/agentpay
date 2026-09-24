@@ -103,7 +103,7 @@ const acpAbi = parseAbi([
   "event PaymentReleased(uint256 indexed jobId, address indexed provider, uint256 amount)",
   "event Refunded(uint256 indexed jobId, address indexed client, uint256 amount)",
 ]);
-const repAbi = parseAbi(["function getSummary(uint256 agentId, address[] clientAddresses, string tag1, string tag2) view returns (uint64 count, int128 summaryValue, uint8 summaryValueDecimals)"]);
+const repAbi = parseAbi(["function getSummary(uint256 agentId, address[] clientAddresses, string tag1, string tag2) view returns (uint64 count, int128 summaryValue, uint8 summaryValueDecimals)", "function getClients(uint256 agentId) view returns (address[])"]);
 const idAbi = parseAbi(["function tokenURI(uint256) view returns (string)", "function ownerOf(uint256) view returns (address)"]);
 
 const client = createPublicClient({ chain, transport: http() });
@@ -171,9 +171,14 @@ async function loadReputation() {
   const agent = q.get("agent");
   if (!agent) return;
   try {
-    const [count, value, dec] = await client.readContract({ address: REPUTATION, abi: repAbi, functionName: "getSummary", args: [BigInt(agent), [], "", ""] });
-    const avg = count ? (Number(value) / Number(count) / 10 ** dec).toFixed(1) : "n/a";
-    $("rep").textContent = `${avg} / 100`;
+    const clients = await client.readContract({ address: REPUTATION, abi: repAbi, functionName: "getClients", args: [BigInt(agent)] });
+    let count = 0n, avg = "n/a";
+    if (clients.length) {
+      const [c, value, dec] = await client.readContract({ address: REPUTATION, abi: repAbi, functionName: "getSummary", args: [BigInt(agent), clients, "", ""] });
+      count = c;
+      avg = c ? (Number(value) / 10 ** dec).toFixed(1) : "n/a";
+    }
+    $("rep").textContent = avg === "n/a" ? "–" : `${avg} / 100`;
     const uri = await client.readContract({ address: IDENTITY, abi: idAbi, functionName: "tokenURI", args: [BigInt(agent)] });
     const m = /^data:application\/json;base64,(.+)$/.exec(uri);
     const name = m ? JSON.parse(atob(m[1])).name : "";
