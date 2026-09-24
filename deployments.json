@@ -1,0 +1,15 @@
+{
+  "mainnet": {
+    "chainId": 5042,
+    "erc8183": "0x14fb0049c9999dd60d0d6fe5522c82e0ae81814e",
+    "implementation": "0xd346e1036f9f5ae6b9d1a384359c7fb365b0b955",
+    "deployer": "0x245bFeB24d1805aB6c8C5D9018390a0F3E54923F",
+    "treasury": "0xEA3062f36b4cdae9B8bDE26333E4d470Fa761b82",
+    "admin": "0xEA3062f36b4cdae9B8bDE26333E4d470Fa761b82",
+    "txs": {
+      "implementation": "0x68b8fa9b64425611b22b4a83dcb3cf66d50ba49d0d649f77d94a37f949990388",
+      "proxy": "0xac1a2be5d0f6b0996be5d9bcd985141668dca57a5de750ce475695988353ea49"
+    },
+    "deployedAt": "2026-09-24T19:07:32.365Z"
+  }
+}

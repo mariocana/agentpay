@@ -81,14 +81,14 @@ import { createPublicClient, http, formatUnits, parseAbi, keccak256, toHex } fro
 import { arc, arcTestnet } from "https://esm.sh/viem@2/chains";
 
 const q = new URLSearchParams(location.search);
-const network = q.get("network") === "mainnet" ? "mainnet" : "testnet";
+const network = q.get("network") === "testnet" ? "testnet" : "mainnet";
 const chain = network === "mainnet" ? arc : arcTestnet;
 const explorer = chain.blockExplorers.default.url;
-const CONTRACT = q.get("contract") ?? (network === "testnet" ? "0x0747EEf0706327138c69792bF28Cd525089e4583" : "");
+const CONTRACT = q.get("contract") ?? (network === "testnet" ? "0x0747EEf0706327138c69792bF28Cd525089e4583" : "0x14fb0049c9999dd60d0d6fe5522c82e0ae81814e");
 const IDENTITY = network === "testnet" ? "0x8004A818BFB912233c491871b3d84c89A494BD9e" : "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
 const REPUTATION = network === "testnet" ? "0x8004B663056A597Dffe9eCcC1965A193B7388713" : "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63";
 // ~0.5s blocks; 24h ≈ 170k blocks. RPC caps eth_getLogs at <10k blocks per call, so we scan in chunks.
-const LOOKBACK = BigInt(q.get("lookback") ?? 60000); // ≈ 8h
+const LOOKBACK = BigInt(q.get("lookback") ?? 60000);
 const CHUNK = 5000n;
 const STATUS = ["Open", "Funded", "Submitted", "Completed", "Rejected", "Expired"];
 
@@ -115,11 +115,12 @@ const txLink = (h, label = "tx") => `<a href="${explorer}/tx/${h}" target="_blan
 $("netlabel").textContent = `· Arc ${network} (chain ${chain.id})`;
 $("contract").innerHTML = CONTRACT ? `<a href="${explorer}/address/${CONTRACT}" target="_blank">${CONTRACT}</a>` : "set ?contract=0x…";
 const form = $("filters");
-for (const k of ["provider", "agent", "worker"]) form.elements[k].value = q.get(k) ?? (k === "worker" ? "http://localhost:8787" : "");
+const DEFAULTS = { provider: network === "mainnet" ? "0xC70eea97De1D35BAa18FD2d26CaF7010C19482dB" : "", agent: network === "mainnet" ? "207" : "", worker: "" };
+for (const k of ["provider", "agent", "worker"]) form.elements[k].value = q.get(k) ?? DEFAULTS[k];
 form.onsubmit = (e) => { e.preventDefault(); const p = new URLSearchParams(q); for (const k of ["provider","agent","worker"]) { const v = form.elements[k].value.trim(); v ? p.set(k, v) : p.delete(k); } location.search = p.toString(); };
 
-const provider = q.get("provider")?.toLowerCase() || null;
-const workerUrl = (q.get("worker") ?? "http://localhost:8787").replace(/\/$/, "");
+const provider = (q.get("provider") ?? DEFAULTS.provider).toLowerCase() || null;
+const workerUrl = (q.get("worker") ?? DEFAULTS.worker).replace(/\/$/, "");
 const jobs = new Map(); // id -> { job, deliverable, txs }
 const feed = [];
 
@@ -136,10 +137,18 @@ async function refreshJob(id, deliverableHash) {
   entry.job = j;
   if (deliverableHash) entry.hash = deliverableHash;
   if (entry.hash && !entry.deliverable) {
-    try {
-      const r = await fetch(`${workerUrl}/deliverables/${entry.hash}`);
-      if (r.ok) { const d = await r.json(); entry.deliverable = d; entry.verified = d.hash === entry.hash; }
-    } catch {}
+    const sources = [`./deliverables/${entry.hash}.json`];
+    if (workerUrl) sources.unshift(`${workerUrl}/deliverables/${entry.hash}`);
+    for (const url of sources) {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const d = await r.json();
+        entry.deliverable = d;
+        entry.verified = keccak256(toHex(canonical(d))) === entry.hash;
+        break;
+      } catch {}
+    }
   }
   jobs.set(id.toString(), entry);
   render();
@@ -153,7 +162,7 @@ function render() {
   $("jobs").innerHTML = rows.map(({ job, deliverable, hash, verified }) => {
     const st = STATUS[job.status];
     const del = deliverable
-      ? `<details><summary>view ${verified ? "✓" : "(unverified)"}</summary><pre>${escape(deliverable.output)}</pre><div class="sub mono">${hash}</div></details>`
+      ? `<details><summary>${verified ? "view ✓" : "view ⚠ hash mismatch"}</summary><pre>${escape(deliverable.output)}</pre><div class="sub mono">${hash}</div></details>`
       : hash ? `<span class="mono" title="${hash}">${short(hash)}</span>` : "–";
     return `<tr><td>${job.id}</td><td><span class="pill ${st}">${st}</span></td><td class="desc">${escape(job.description)}</td>
       <td>${job.budget ? formatUnits(job.budget, 6) + " USDC" : "–"}</td><td>${addrLink(job.client)} → ${addrLink(job.provider)}</td><td>${del}</td></tr>`;
@@ -165,10 +174,13 @@ async function withRetry(fn, tries = 5) {
     try { return await fn(); } catch (e) { if (i >= tries - 1 || !/rate limit|429|limit exceeded/i.test(e.message)) throw e; await new Promise(r => setTimeout(r, 800 * 2 ** i)); }
   }
 }
+function canonical(d) {
+  return JSON.stringify(d, ["jobId", "model", "output", "producedAt", "provider", "task"]);
+}
 const escape = (s) => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
 async function loadReputation() {
-  const agent = q.get("agent");
+  const agent = q.get("agent") ?? DEFAULTS.agent;
   if (!agent) return;
   try {
     const clients = await client.readContract({ address: REPUTATION, abi: repAbi, functionName: "getClients", args: [BigInt(agent)] });
@@ -212,10 +224,10 @@ async function main() {
   await Promise.all([...ids.values()].map(({ id, hash }) => refreshJob(id, hash)));
   $("status").textContent = `Live · ${logs.length} events since block ${fromBlock}`;
   loadReputation();
-  client.watchContractEvent({ address: CONTRACT, abi: acpAbi, fromBlock: latest + 1n, poll: true, pollingInterval: 1500, onLogs: async (ls) => {
+  client.watchContractEvent({ address: CONTRACT, abi: acpAbi, fromBlock: latest + 1n, poll: true, pollingInterval: 12000, onLogs: async (ls) => {
     for (const l of ls) { pushFeed(l, l.blockNumber, l.transactionHash); await refreshJob(l.args.jobId, l.eventName === "JobSubmitted" ? l.args.deliverable : undefined); }
     if (ls.some(l => l.eventName === "JobCompleted" || l.eventName === "JobRejected")) loadReputation();
-  }});
+  }, onError: (e) => { $("status").innerHTML = `Live · update failed: <span class="err">${escape(e.message.split("\n")[0])}</span>`; }});
 }
 main().catch(e => { $("status").innerHTML = `<span class="err">${escape(e.message)}</span>`; });
 </script>
