@@ -31,15 +31,16 @@ const ERC8004 = {
 export const IDENTITY_REGISTRY = ERC8004.identity;
 export const REPUTATION_REGISTRY = ERC8004.reputation;
 
-// ERC-8183 AgenticCommerce. Testnet: Circle reference deployment. Mainnet: our own (scripts/deploy-erc8183.ts).
-const erc8183FromEnv = process.env.ERC8183_ADDRESS as Address | undefined;
-export const ERC8183: Address =
-  erc8183FromEnv ??
-  (network === "testnet"
-    ? "0x0747EEf0706327138c69792bF28Cd525089e4583"
-    : (() => {
-        throw new Error("ERC8183_ADDRESS is required on mainnet (run scripts/deploy-erc8183.ts first)");
-      })());
+const ERC8183_DEFAULT: Record<ArcNetwork, Address | null> = {
+  testnet: "0x0747EEf0706327138c69792bF28Cd525089e4583",
+  mainnet: null,
+};
+
+export function erc8183Address(): Address {
+  const addr = (process.env.ERC8183_ADDRESS as Address | undefined) ?? ERC8183_DEFAULT[network];
+  if (!addr) throw new Error("ERC8183_ADDRESS is required on mainnet (run: npm run deploy:erc8183)");
+  return addr;
+}
 
 export const WORKER_PORT = Number(process.env.WORKER_PORT ?? 8787);
 

@@ -2,7 +2,7 @@
 import { createServer } from "node:http";
 import { formatUnits, parseAbiItem, type Address, type Hex } from "viem";
 import { accountFromEnv, publicClient, walletFor } from "../clients.js";
-import { ERC8183, WORKER_PORT, network, txUrl } from "../config.js";
+import { erc8183Address, WORKER_PORT, network, txUrl } from "../config.js";
 import { getJob, setBudget, submit, watchEvents, type Job } from "../acp.js";
 import { hashDeliverable, loadDeliverable, storeDeliverable, type Deliverable } from "../deliverables.js";
 import { doWork, MODEL } from "../llm.js";
@@ -72,7 +72,7 @@ async function catchUp() {
   const logs = [];
   for (let b = fromBlock; b <= latest; b += CHUNK) {
     const toBlock = b + CHUNK - 1n < latest ? b + CHUNK - 1n : latest;
-    logs.push(...(await publicClient.getLogs({ address: ERC8183, event, args: { provider: me }, fromBlock: b, toBlock })));
+    logs.push(...(await publicClient.getLogs({ address: erc8183Address(), event, args: { provider: me }, fromBlock: b, toBlock })));
   }
   log(`catch-up: ${logs.length} job(s) assigned to me in the last ${LOOKBACK} blocks`);
   for (const l of logs) if (l.args.jobId !== undefined) await handleJob(l.args.jobId);
@@ -85,7 +85,7 @@ function serveHttp() {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Content-Type", "application/json");
     if (url.pathname === "/health") {
-      res.end(JSON.stringify({ ok: true, address: me, agentId, network, contract: ERC8183, model: MODEL }));
+      res.end(JSON.stringify({ ok: true, address: me, agentId, network, contract: erc8183Address(), model: MODEL }));
       return;
     }
     const m = /^\/deliverables\/(0x[0-9a-fA-F]{64})$/.exec(url.pathname);
@@ -107,7 +107,7 @@ function serveHttp() {
 }
 
 async function main() {
-  log(`network=${network} address=${me} agentId=${agentId ?? "(unregistered — run npm run register)"} contract=${ERC8183}`);
+  log(`network=${network} address=${me} agentId=${agentId ?? "(unregistered — run npm run register)"} contract=${erc8183Address()}`);
   serveHttp();
   const latest = await catchUp();
   watchEvents((logs) => {

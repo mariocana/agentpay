@@ -2,7 +2,7 @@
 // with Claude, releases (or refunds) the escrow, and records ERC-8004 reputation for the worker.
 import { formatUnits, parseAbiItem, parseUnits, type Address, type Hex } from "viem";
 import { accountFromEnv, publicClient, walletFor } from "../clients.js";
-import { ERC8183, addressUrl, network, txUrl } from "../config.js";
+import { erc8183Address, addressUrl, network, txUrl } from "../config.js";
 import { complete, createJob, fund, getJob, reject, usdcBalance, waitForStatus } from "../acp.js";
 import { fetchDeliverable, hashDeliverable } from "../deliverables.js";
 import { agentOwner, agentRegistration, giveFeedback, reputationSummary } from "../identity.js";
@@ -26,7 +26,7 @@ async function resolveWorker(): Promise<{ agentId: bigint; provider: Address; en
 
 async function deliverableHashFor(jobId: bigint, fromBlock: bigint): Promise<Hex> {
   const logs = await publicClient.getLogs({
-    address: ERC8183,
+    address: erc8183Address(),
     event: parseAbiItem("event JobSubmitted(uint256 indexed jobId, address indexed provider, bytes32 deliverable)"),
     args: { jobId },
     fromBlock,
