@@ -73,7 +73,9 @@ npx serve web -l 5173
 # http://localhost:5173/?network=testnet&contract=0x0747EEf0706327138c69792bF28Cd525089e4583&provider=<worker>&agent=<id>
 ```
 
-It defaults to the mainnet deployment. Query params override that: `network=testnet|mainnet`, `contract=0x…`, `provider`, `agent`, `worker` (a running worker's URL for live deliverables), `lookback` (blocks).
+It defaults to the mainnet deployment. Query params override that: `network=testnet|mainnet`, `contract=0x…`, `provider`, `agent`, `worker` (a running worker's URL for live deliverables), `rpc` (custom endpoint), `lookback` (blocks).
+
+The page renders from `web/data.json`, a snapshot committed to the repo, then upgrades to live chain data when the RPC answers. If the public Arc RPC is unreachable or rate-limiting, the table still shows and the status line says which snapshot you are looking at. Regenerate it with `npm run snapshot`. Pass `rpc=` to use your own endpoint instead of the public one.
 
 Deliverables are fetched from a running worker when `worker` is set, otherwise from the static copies in `web/deliverables/`. Either way the page recomputes `keccak256` of the payload and checks it against the commitment stored onchain, so a `✓` means the browser verified it, not that it trusted the server.
 
@@ -97,6 +99,7 @@ src/agents/client.ts   client/evaluator agent (one job per run)
 scripts/               keygen, register-agent, status, compile/deploy ERC-8183
 web/index.html         live dashboard (viem in the browser)
 web/deliverables/      static copies of the mainnet deliverables, for the public dashboard
+web/data.json          chain snapshot the dashboard falls back to (npm run snapshot)
 deployments.json       mainnet deployment record (addresses + tx hashes)
 contracts/             verified ERC-8183 + OZ sources and ABIs
 ```
