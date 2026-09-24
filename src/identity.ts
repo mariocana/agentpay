@@ -85,7 +85,7 @@ export async function reputationSummary(agentId: bigint) {
   });
   return {
     count,
-    averageScore: count === 0n ? null : Number(value) / Number(count) / 10 ** decimals,
+    averageScore: count === 0n ? null : Number(value) / 10 ** decimals,
     clients,
   };
 }
