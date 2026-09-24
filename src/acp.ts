@@ -4,6 +4,7 @@ import { agenticCommerceAbi } from "./abi/agenticCommerce.js";
 import { erc20Abi } from "./abi/erc20.js";
 import { erc8183Address, USDC, JOB_STATUS, txUrl } from "./config.js";
 import { publicClient, type Wallet } from "./clients.js";
+import { withRetry } from "./rpc.js";
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 export const ZERO_BYTES32 = `0x${"0".repeat(64)}` as Hex;
@@ -23,12 +24,12 @@ export interface Job {
 }
 
 export async function getJob(jobId: bigint): Promise<Job> {
-  const j = await publicClient.readContract({ ...acp(), functionName: "getJob", args: [jobId] });
+  const j = await withRetry(() => publicClient.readContract({ ...acp(), functionName: "getJob", args: [jobId] }));
   return { ...j, status: JOB_STATUS[j.status] ?? "Open" };
 }
 
 export async function jobCounter(): Promise<bigint> {
-  return publicClient.readContract({ ...acp(), functionName: "jobCounter" });
+  return withRetry(() => publicClient.readContract({ ...acp(), functionName: "jobCounter" }));
 }
 
 async function send(wallet: Wallet, label: string, request: () => Promise<Hex>): Promise<Hex> {
@@ -76,7 +77,7 @@ export function setBudget(wallet: Wallet, jobId: bigint, amount: bigint) {
 export async function fund(wallet: Wallet, jobId: bigint): Promise<Hex> {
   const job = await getJob(jobId);
   const owner = wallet.account.address;
-  const allowance = await publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "allowance", args: [owner, erc8183Address()] });
+  const allowance = await withRetry(() => publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "allowance", args: [owner, erc8183Address()] }));
   if (allowance < job.budget) {
     await send(wallet, "approve", () =>
       wallet.writeContract({ address: USDC, abi: erc20Abi, functionName: "approve", args: [erc8183Address(), job.budget] }),
@@ -107,11 +108,11 @@ export function reject(wallet: Wallet, jobId: bigint, reason: string) {
 }
 
 export async function usdcBalance(addr: Address): Promise<bigint> {
-  return publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [addr] });
+  return withRetry(() => publicClient.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [addr] }));
 }
 
 /** Poll until the job reaches one of `statuses` (Arc finality is sub-second, polling is cheap). */
-export async function waitForStatus(jobId: bigint, statuses: Job["status"][], timeoutMs = 10 * 60_000, intervalMs = 1500): Promise<Job> {
+export async function waitForStatus(jobId: bigint, statuses: Job["status"][], timeoutMs = 10 * 60_000, intervalMs = 4000): Promise<Job> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const job = await getJob(jobId);
@@ -121,14 +122,22 @@ export async function waitForStatus(jobId: bigint, statuses: Job["status"][], ti
   throw new Error(`job ${jobId} did not reach ${statuses.join("/")} within ${timeoutMs}ms`);
 }
 
-/** Subscribe to AgenticCommerce events (polling-based, works on plain HTTP RPC). */
-export function watchEvents(onLogs: (logs: WatchedLog[]) => void, fromBlock?: bigint) {
+export type AcpEventName = "JobCreated" | "BudgetSet" | "JobFunded" | "JobSubmitted" | "JobCompleted" | "JobRejected";
+
+export function watchEvent(
+  eventName: AcpEventName,
+  onLogs: (logs: WatchedLog[]) => void,
+  fromBlock?: bigint,
+  onError?: (e: Error) => void,
+) {
   return publicClient.watchContractEvent({
     ...acp(),
+    eventName,
     fromBlock,
     poll: true,
-    pollingInterval: 1500,
+    pollingInterval: 4000,
     onLogs: (logs) => onLogs(logs as unknown as WatchedLog[]),
+    onError,
   });
 }
 
