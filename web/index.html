@@ -173,9 +173,10 @@ function render() {
   }).join("") || `<tr><td colspan="6" class="sub">No jobs in the last ${LOOKBACK} blocks${provider ? " for this provider" : ""}.</td></tr>`;
 }
 // Public RPCs rate-limit bursts; back off and retry.
+const RETRYABLE = /rate limit|429|limit exceeded|too many requests|failed to fetch|http request failed|network|timeout/i;
 async function withRetry(fn, tries = 7) {
   for (let i = 0; ; i++) {
-    try { return await fn(); } catch (e) { if (i >= tries - 1 || !/rate limit|429|limit exceeded/i.test(e.message)) throw e; await new Promise(r => setTimeout(r, 800 * 2 ** i)); }
+    try { return await fn(); } catch (e) { if (i >= tries - 1 || !RETRYABLE.test(e.message)) throw e; await new Promise(r => setTimeout(r, 800 * 2 ** i)); }
   }
 }
 function canonical(d) {
@@ -246,7 +247,10 @@ async function main() {
   }, onError: () => {} });
 }
 
-main().catch(e => { $("status").innerHTML = `<span class="err">${escape(e.message)}</span>`; });
+main().catch(() => {
+  $("status").innerHTML = `<span class="err">The public Arc RPC is rate-limiting this page.</span> <button id="retry">Retry</button>`;
+  $("retry").onclick = () => location.reload();
+});
 </script>
 </body>
 </html>
