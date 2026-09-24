@@ -15,7 +15,7 @@ export interface Deliverable {
 }
 
 export function canonical(d: Deliverable): string {
-  return JSON.stringify(d, Object.keys(d).sort());
+  return JSON.stringify(d, ["jobId", "model", "output", "producedAt", "provider", "task"]);
 }
 
 export function hashDeliverable(d: Deliverable): Hex {
